@@ -49,6 +49,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/master/ports"
+	"k8s.io/kubernetes/pkg/networkprovider"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/chmod"
 	"k8s.io/kubernetes/pkg/util/chown"
@@ -116,6 +117,7 @@ type KubeletServer struct {
 	MinimumGCAge                   time.Duration
 	NetworkPluginDir               string
 	NetworkPluginName              string
+	NetworkProvider                string
 	NodeLabels                     []string
 	NodeLabelsFile                 string
 	NodeStatusUpdateFrequency      time.Duration
@@ -318,8 +320,9 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&s.ImageGCHighThresholdPercent, "image-gc-high-threshold", s.ImageGCHighThresholdPercent, "The percent of disk usage after which image garbage collection is always run. Default: 90%")
 	fs.IntVar(&s.ImageGCLowThresholdPercent, "image-gc-low-threshold", s.ImageGCLowThresholdPercent, "The percent of disk usage before which image garbage collection is never run. Lowest disk usage to garbage collect to. Default: 80%")
 	fs.IntVar(&s.LowDiskSpaceThresholdMB, "low-diskspace-threshold-mb", s.LowDiskSpaceThresholdMB, "The absolute free disk space, in MB, to maintain. When disk space falls below this threshold, new pods would be rejected. Default: 256")
-	fs.StringVar(&s.NetworkPluginName, "network-plugin", s.NetworkPluginName, "<Warning: Alpha feature> The name of the network plugin to be invoked for various events in kubelet/pod lifecycle")
+	fs.StringVar(&s.NetworkPluginName, "network-plugin", s.NetworkPluginName, "<Warning: Alpha feature> The name of the network plugin to be invoked for various events in kubelet/pod lifecycle. Note that network-provider option will override this option.")
 	fs.StringVar(&s.NetworkPluginDir, "network-plugin-dir", s.NetworkPluginDir, "<Warning: Alpha feature> The full path of the directory in which to search for network plugins")
+	fs.StringVar(&s.NetworkProvider, "network-provider", s.NetworkProvider, "The name of network provider. Enable network provider will disable network-plugin option")
 	fs.StringVar(&s.CloudProvider, "cloud-provider", s.CloudProvider, "The provider for cloud services.  Empty string for no provider.")
 	fs.StringVar(&s.CloudConfigFile, "cloud-config", s.CloudConfigFile, "The path to the cloud provider configuration file.  Empty string for no configuration file.")
 	fs.StringVar(&s.ResourceContainer, "resource-container", s.ResourceContainer, "Absolute name of the resource-only container to create and run the Kubelet in (Default: /kubelet).")
@@ -411,6 +414,19 @@ func (s *KubeletServer) UnsecuredKubeletConfig() (*KubeletConfig, error) {
 		manifestURLHeader.Set(pieces[0], pieces[1])
 	}
 
+	// network plugins
+	networkPluginName := s.NetworkPluginName
+	networkPlugins := ProbeNetworkPlugins(s.NetworkPluginDir)
+
+	ProbeNetworkProviders()
+	networkProvider, err := networkprovider.InitNetworkProvider(s.NetworkProvider)
+	if err != nil {
+		glog.Errorf("Network provider could not be initialized: %v", err)
+	} else {
+		networkPlugins = append(networkPlugins, NewRemoteNetworkPlugin(networkProvider))
+		networkPluginName = "NetworkProvider"
+	}
+
 	return &KubeletConfig{
 		Address:                   s.Address,
 		AllowPrivileged:           s.AllowPrivileged,
@@ -452,8 +468,8 @@ func (s *KubeletServer) UnsecuredKubeletConfig() (*KubeletConfig, error) {
 		Mounter:                   mounter,
 		ChownRunner:               chownRunner,
 		ChmodRunner:               chmodRunner,
-		NetworkPluginName:         s.NetworkPluginName,
-		NetworkPlugins:            ProbeNetworkPlugins(s.NetworkPluginDir),
+		NetworkPluginName:         networkPluginName,
+		NetworkPlugins:            networkPlugins,
 		NodeLabels:                s.NodeLabels,
 		NodeLabelsFile:            s.NodeLabelsFile,
 		NodeStatusUpdateFrequency: s.NodeStatusUpdateFrequency,

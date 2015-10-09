@@ -869,6 +869,11 @@ func (r *Runtime) Version() (kubecontainer.Version, error) {
 	return r.binVersion, nil
 }
 
+// Name returns the name of the container runtime
+func (r *Runtime) Name() string {
+	return "rkt"
+}
+
 // TODO(yifan): This is very racy, unefficient, and unsafe, we need to provide
 // different namespaces. See: https://github.com/coreos/rkt/issues/836.
 func (r *Runtime) writeDockerAuthConfig(image string, credsSlice []docker.AuthConfiguration) error {

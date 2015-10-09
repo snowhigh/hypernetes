@@ -28,6 +28,8 @@ import (
 type Volume interface {
 	// GetPath returns the directory path the volume is mounted to.
 	GetPath() string
+	// GetMetadata returns the metadata of the volume
+	GetMetaData() map[string]interface{}
 }
 
 // Attributes represents the attributes of this builder.

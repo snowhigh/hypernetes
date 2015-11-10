@@ -1982,9 +1982,8 @@ func ValidateSubnet(ipAddress, cidr string) (bool, string) {
 }
 
 // ValidateNetwork tests if required fields are set.
-func ValidateNetwork(network *api.Network) errs.ValidationErrorList {
-	allErrs := errs.ValidationErrorList{}
-	allErrs = append(allErrs, ValidateObjectMeta(&network.ObjectMeta, false, ValidateNetworkName).Prefix("metadata")...)
+func ValidateNetwork(network *api.Network) validation.ErrorList {
+	allErrs := ValidateObjectMeta(&network.ObjectMeta, false, ValidateNetworkName, validation.NewFieldPath("metadata"))
 
 	if network.Spec.TenantID == "" {
 		allErrs = append(allErrs, errs.NewFieldRequired("tenantID"))
@@ -2002,17 +2001,15 @@ func ValidateNetwork(network *api.Network) errs.ValidationErrorList {
 }
 
 // ValidateNetworkUpdate tests to make sure a network update can be applied.
-func ValidateNetworkUpdate(newNetwork *api.Network, oldNetwork *api.Network) errs.ValidationErrorList {
-	allErrs := errs.ValidationErrorList{}
-	allErrs = append(allErrs, ValidateObjectMetaUpdate(&newNetwork.ObjectMeta, &oldNetwork.ObjectMeta).Prefix("metadata")...)
+func ValidateNetworkUpdate(newNetwork *api.Network, oldNetwork *api.Network) validation.ErrorList {
+	allErrs := ValidateObjectMetaUpdate(&newNetwork.ObjectMeta, &oldNetwork.ObjectMeta, validation.NewFieldPath("metadata"))
 	newNetwork.Status = oldNetwork.Status
 	return allErrs
 }
 
 // ValidateNetworkStatusUpdate tests to see if the update is legal for an end user to make
-func ValidateNetworkStatusUpdate(newNetwork, oldNetwork *api.Network) errs.ValidationErrorList {
-	allErrs := errs.ValidationErrorList{}
-	allErrs = append(allErrs, ValidateObjectMetaUpdate(&newNetwork.ObjectMeta, &oldNetwork.ObjectMeta).Prefix("metadata")...)
+func ValidateNetworkStatusUpdate(newNetwork, oldNetwork *api.Network) validation.ErrorList {
+	allErrs := ValidateObjectMetaUpdate(&newNetwork.ObjectMeta, &oldNetwork.ObjectMeta, validation.NewFieldPath("metadata"))
 	newNetwork.Spec = oldNetwork.Spec
 	if !newNetwork.DeletionTimestamp.IsZero() && newNetwork.Status.Phase != api.NetworkTerminating {
 		allErrs = append(allErrs, errs.NewFieldInvalid("Status.Phase", newNetwork.Status.Phase, "A network may only be in terminating status if it has a deletion timestamp."))

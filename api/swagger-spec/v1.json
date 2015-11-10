@@ -2719,7 +2719,7 @@
    },
    {
     "path": "/api/v1/networks",
-    "description": "API at /api/v1 version v1",
+    "description": "API at /api/v1",
     "operations": [
      {
       "type": "v1.NetworkList",
@@ -2764,6 +2764,14 @@
         "paramType": "query",
         "name": "resourceVersion",
         "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
         "required": false,
         "allowMultiple": false
        }
@@ -2823,7 +2831,7 @@
    },
    {
     "path": "/api/v1/watch/networks",
-    "description": "API at /api/v1 version v1",
+    "description": "API at /api/v1",
     "operations": [
      {
       "type": "json.WatchEvent",
@@ -2870,6 +2878,14 @@
         "description": "When specified with a watch call, shows changes that occur after that particular version of a resource. Defaults to changes from the beginning of history.",
         "required": false,
         "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
        }
       ],
       "responseMessages": [
@@ -2890,7 +2906,7 @@
    },
    {
     "path": "/api/v1/networks/{name}",
-    "description": "API at /api/v1 version v1",
+    "description": "API at /api/v1",
     "operations": [
      {
       "type": "v1.Network",
@@ -2989,7 +3005,7 @@
         "allowMultiple": false
        },
        {
-        "type": "api.Patch",
+        "type": "unversioned.Patch",
         "paramType": "body",
         "name": "body",
         "description": "",
@@ -3070,7 +3086,7 @@
    },
    {
     "path": "/api/v1/watch/networks/{name}",
-    "description": "API at /api/v1 version v1",
+    "description": "API at /api/v1",
     "operations": [
      {
       "type": "json.WatchEvent",
@@ -3119,6 +3135,14 @@
         "allowMultiple": false
        },
        {
+        "type": "integer",
+        "paramType": "query",
+        "name": "timeoutSeconds",
+        "description": "Timeout for the list/watch call.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
         "type": "string",
         "paramType": "path",
         "name": "name",
@@ -3145,7 +3169,7 @@
    },
    {
     "path": "/api/v1/networks/{name}/status",
-    "description": "API at /api/v1 version v1",
+    "description": "API at /api/v1",
     "operations": [
      {
       "type": "v1.Network",

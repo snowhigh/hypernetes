@@ -36,11 +36,9 @@ import (
 	"k8s.io/kubernetes/pkg/client/record"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/credentialprovider"
-	"k8s.io/kubernetes/pkg/fields"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	proberesults "k8s.io/kubernetes/pkg/kubelet/prober/results"
-	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util"
 )
@@ -69,6 +67,7 @@ type runtime struct {
 	hyperClient         *HyperClient
 	kubeClient          client.Interface
 	imagePuller         kubecontainer.ImagePuller
+	version             kubecontainer.Version
 }
 
 var _ kubecontainer.Runtime = &runtime{}
@@ -114,6 +113,17 @@ func New(generator kubecontainer.RunContainerOptionsGenerator,
 		hyper.imagePuller = kubecontainer.NewImagePuller(recorder, hyper, imageBackOff)
 	}
 
+	version, err := hyper.hyperClient.Version()
+	if err != nil {
+		return nil, fmt.Errorf("cannot get hyper version: %v", err)
+	}
+
+	hyperVersion, err := parseVersion(version)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get hyper version: %v", err)
+	}
+
+	hyper.version = hyperVersion
 	return hyper, nil
 }
 
@@ -142,12 +152,7 @@ func (r *runtime) runCommand(args ...string) ([]string, error) {
 // runtime on the machine.
 // The return values are an int array containers the version number.
 func (r *runtime) Version() (kubecontainer.Version, error) {
-	version, err := r.hyperClient.Version()
-	if err != nil {
-		return nil, err
-	}
-
-	return parseVersion(version)
+	return r.version, nil
 }
 
 // Type returns the name of the container runtime
@@ -295,7 +300,14 @@ func (r *runtime) GetPods(all bool) ([]*kubecontainer.Pod, error) {
 			container.Image = cinfo.Image
 
 			for _, cstatus := range podInfo.PodInfo.Status.Status {
-				if cstatus.ContainerID == r.buildContainerID(cinfo.ContainerID) {
+				if cstatus.ContainerID == cinfo.ContainerID {
+					switch cstatus.Phase {
+					case StatusRunning:
+						container.State = kubecontainer.ContainerStateRunning
+					default:
+						container.State = kubecontainer.ContainerStateExited
+					}
+
 					createAt, err := parseTimeString(cstatus.Running.StartedAt)
 					if err == nil {
 						container.Created = createAt.Unix()
@@ -326,7 +338,7 @@ func (r *runtime) GetPods(all bool) ([]*kubecontainer.Pod, error) {
 }
 
 func (r *runtime) buildHyperPodServices(pod *api.Pod) []HyperService {
-	items, err := r.kubeClient.Services(pod.Namespace).List(labels.Everything(), fields.Everything())
+	items, err := r.kubeClient.Services(pod.Namespace).List(unversioned.ListOptions{})
 	if err != nil {
 		glog.Warningf("Get services failed: %v", err)
 		return nil
@@ -616,7 +628,7 @@ func (r *runtime) RunPod(pod *api.Pod, pullSecrets []api.Secret) error {
 }
 
 // Syncs the running pod into the desired pod.
-func (r *runtime) SyncPod(pod *api.Pod, runningPod kubecontainer.Pod, podStatus api.PodStatus, pullSecrets []api.Secret, backOff *util.Backoff) error {
+func (r *runtime) SyncPod(pod *api.Pod, runningPod kubecontainer.Pod, podStatus api.PodStatus, _ *kubecontainer.PodStatus, pullSecrets []api.Secret, backOff *util.Backoff) error {
 	podFullName := r.buildHyperPodFullName(string(pod.UID), string(pod.Name), string(pod.Namespace))
 	if len(runningPod.Containers) == 0 {
 		glog.V(4).Infof("Pod %q is not running, will start it", podFullName)
@@ -635,7 +647,7 @@ func (r *runtime) SyncPod(pod *api.Pod, runningPod kubecontainer.Pod, podStatus 
 
 		c := runningPod.FindContainerByName(container.Name)
 		if c == nil {
-			if kubecontainer.ShouldContainerBeRestarted(&container, pod, &podStatus) {
+			if kubecontainer.ShouldContainerBeRestartedOldVersion(&container, pod, &podStatus) {
 				glog.V(3).Infof("Container %+v is dead, but RestartPolicy says that we should restart it.", container)
 				restartPod = true
 				break
@@ -731,10 +743,10 @@ func (r *runtime) KillPod(pod *api.Pod, runningPod kubecontainer.Pod) error {
 	return nil
 }
 
-// GetPodStatus retrieves the status of the pod, including the information of
+// GetAPIPodStatus retrieves the status of the pod, including the information of
 // all containers in the pod. Clients of this interface assume the containers
 // statuses in a pod always have a deterministic ordering (eg: sorted by name).
-func (r *runtime) GetPodStatus(pod *api.Pod) (*api.PodStatus, error) {
+func (r *runtime) GetAPIPodStatus(pod *api.Pod) (*api.PodStatus, error) {
 	podInfos, err := r.hyperClient.ListPods()
 	if err != nil {
 		glog.Errorf("Hyper: ListPods failed, error: %s", err)
@@ -958,4 +970,18 @@ func (r *runtime) AttachContainer(containerID kubecontainer.ContainerID, stdin i
 
 func (r *runtime) GarbageCollect(gcPolicy kubecontainer.ContainerGCPolicy) error {
 	return nil
+}
+
+func (r *runtime) GetPodStatus(uid types.UID, name, namespace string) (*kubecontainer.PodStatus, error) {
+	return nil, fmt.Errorf("Not implemented yet")
+}
+
+func (r *runtime) ConvertPodStatusToAPIPodStatus(_ *api.Pod, _ *kubecontainer.PodStatus) (*api.PodStatus, error) {
+	return nil, fmt.Errorf("Not implemented yet")
+}
+
+func (r *runtime) GetPodStatusAndAPIPodStatus(pod *api.Pod) (*kubecontainer.PodStatus, *api.PodStatus, error) {
+	podStatus, err := r.GetAPIPodStatus(pod)
+	return nil, podStatus, err
+
 }

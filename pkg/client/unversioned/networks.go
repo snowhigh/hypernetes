@@ -20,8 +20,7 @@ import (
 	"fmt"
 
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/watch"
 )
 
@@ -32,10 +31,10 @@ type NetworksInterface interface {
 type NetworkInterface interface {
 	Create(item *api.Network) (*api.Network, error)
 	Get(name string) (result *api.Network, err error)
-	List(label labels.Selector, field fields.Selector) (*api.NetworkList, error)
+	List(opts unversioned.ListOptions) (*api.NetworkList, error)
 	Delete(name string) error
 	Update(item *api.Network) (*api.Network, error)
-	Watch(label labels.Selector, field fields.Selector, opts api.ListOptions) (watch.Interface, error)
+	Watch(opts unversioned.ListOptions) (watch.Interface, error)
 	Status(item *api.Network) (*api.Network, error)
 }
 
@@ -57,12 +56,11 @@ func (c *networks) Create(network *api.Network) (*api.Network, error) {
 }
 
 // List lists all the networks in the cluster.
-func (c *networks) List(label labels.Selector, field fields.Selector) (*api.NetworkList, error) {
+func (c *networks) List(opts unversioned.ListOptions) (*api.NetworkList, error) {
 	result := &api.NetworkList{}
 	err := c.r.Get().
 		Resource("networks").
-		LabelsSelectorParam(label).
-		FieldsSelectorParam(field).
+		VersionedParams(&opts, api.Scheme).
 		Do().Into(result)
 	return result, err
 }
@@ -102,12 +100,10 @@ func (c *networks) Delete(name string) error {
 }
 
 // Watch returns a watch.Interface that watches the requested networks.
-func (c *networks) Watch(label labels.Selector, field fields.Selector, opts api.ListOptions) (watch.Interface, error) {
+func (c *networks) Watch(opts unversioned.ListOptions) (watch.Interface, error) {
 	return c.r.Get().
 		Prefix("watch").
 		Resource("networks").
 		VersionedParams(&opts, api.Scheme).
-		LabelsSelectorParam(label).
-		FieldsSelectorParam(field).
 		Watch()
 }

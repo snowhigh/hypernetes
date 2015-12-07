@@ -18,8 +18,7 @@ package testclient
 
 import (
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/watch"
 )
 
@@ -38,8 +37,8 @@ func (c *FakeNetworks) Get(name string) (*api.Network, error) {
 	return obj.(*api.Network), err
 }
 
-func (c *FakeNetworks) List(label labels.Selector, field fields.Selector) (*api.NetworkList, error) {
-	obj, err := c.Fake.Invokes(NewRootListAction("networks", label, field), &api.NetworkList{})
+func (c *FakeNetworks) List(opts unversioned.ListOptions) (*api.NetworkList, error) {
+	obj, err := c.Fake.Invokes(NewRootListAction("networks", opts), &api.NetworkList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -70,8 +69,8 @@ func (c *FakeNetworks) Delete(name string) error {
 	return err
 }
 
-func (c *FakeNetworks) Watch(label labels.Selector, field fields.Selector, opts api.ListOptions) (watch.Interface, error) {
-	return c.Fake.InvokesWatch(NewRootWatchAction("networks", label, field, opts))
+func (c *FakeNetworks) Watch(opts unversioned.ListOptions) (watch.Interface, error) {
+	return c.Fake.InvokesWatch(NewRootWatchAction("networks", opts))
 }
 
 func (c *FakeNetworks) Finalize(network *api.Network) (*api.Network, error) {

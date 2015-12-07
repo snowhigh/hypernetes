@@ -1985,14 +1985,15 @@ func ValidateSubnet(ipAddress, cidr string) (bool, string) {
 func ValidateNetwork(network *api.Network) validation.ErrorList {
 	allErrs := ValidateObjectMeta(&network.ObjectMeta, false, ValidateNetworkName, validation.NewFieldPath("metadata"))
 
+	specPath := validation.NewFieldPath("spec")
 	if network.Spec.TenantID == "" {
-		allErrs = append(allErrs, errs.NewFieldRequired("tenantID"))
+		allErrs = append(allErrs, validation.NewRequiredError(specPath.Child("tenantID")))
 	}
 
 	if network.Spec.ProviderNetworkID == "" {
 		for _, subnet := range network.Spec.Subnets {
 			if validated, errMsg := ValidateSubnet(subnet.Gateway, subnet.CIDR); !validated {
-				allErrs = append(allErrs, errs.NewFieldInvalid("subnets", subnet.CIDR, errMsg))
+				allErrs = append(allErrs, validation.NewInvalidError(specPath.Child("subnets"), subnet.CIDR, errMsg))
 			}
 		}
 	}
@@ -2012,7 +2013,7 @@ func ValidateNetworkStatusUpdate(newNetwork, oldNetwork *api.Network) validation
 	allErrs := ValidateObjectMetaUpdate(&newNetwork.ObjectMeta, &oldNetwork.ObjectMeta, validation.NewFieldPath("metadata"))
 	newNetwork.Spec = oldNetwork.Spec
 	if !newNetwork.DeletionTimestamp.IsZero() && newNetwork.Status.Phase != api.NetworkTerminating {
-		allErrs = append(allErrs, errs.NewFieldInvalid("Status.Phase", newNetwork.Status.Phase, "A network may only be in terminating status if it has a deletion timestamp."))
+		allErrs = append(allErrs, validation.NewInvalidError(validation.NewFieldPath("status", "Phase"), newNetwork.Status.Phase, "A network may only be in terminating status if it has a deletion timestamp."))
 	}
 	return allErrs
 }

@@ -46,7 +46,6 @@ type APIServer struct {
 	CertDirectory        string
 	APIPrefix            string
 	KeystoneURL          string
-	EnableLogsSupport    bool
 	MaxRequestsInFlight  int
 	MinRequestTimeout    int
 	LongRunningRequestRE string
@@ -60,7 +59,6 @@ func NewAPIServer() *APIServer {
 		BindAddress:         net.ParseIP("0.0.0.0"),
 		SecurePort:          6443,
 		APIPrefix:           "/hapi",
-		EnableLogsSupport:   true,
 	}
 
 	return &s
@@ -169,10 +167,8 @@ func (s *APIServer) Run(_ []string) error {
 
 	config := &hmaster.Config{
 		EnableCoreControllers: true,
-		EnableLogsSupport:     s.EnableLogsSupport,
 		EnableProfiling:       true,
 		EnableWatchCache:      true,
-		EnableIndex:           true,
 		APIPrefix:             s.APIPrefix,
 		ReadWritePort:         s.SecurePort,
 		PublicAddress:         s.AdvertiseAddress,

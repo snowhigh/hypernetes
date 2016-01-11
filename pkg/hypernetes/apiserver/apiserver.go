@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"path"
 	rt "runtime"
@@ -34,7 +33,6 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	apierrors "k8s.io/kubernetes/pkg/api/errors"
 	"k8s.io/kubernetes/pkg/api/latest"
-	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/api/rest"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/apiserver/metrics"
@@ -71,8 +69,6 @@ type Mux interface {
 // Where 'storage_key' points to a rest.Storage object stored in storage.
 // This object should contain all parameterization necessary for running a particular API version
 type APIGroupVersion struct {
-	Storage map[string]rest.Storage
-
 	Root         string
 	GroupVersion unversioned.GroupVersion
 
@@ -80,28 +76,11 @@ type APIGroupVersion struct {
 	// TODO: refactor proxy handler to use sub resources
 	RequestInfoResolver *RequestInfoResolver
 
-	// ServerVersion controls the Kubernetes APIVersion used for common objects in the apiserver
-	// schema like api.Status, api.DeleteOptions, and unversioned.ListOptions. Other implementors may
-	// define a version "v1beta1" but want to use the Kubernetes "v1" internal objects. If
-	// empty, defaults to Version.
-	// TODO this seems suspicious.  Is this actually just "unversioned" now?
-	ServerGroupVersion *unversioned.GroupVersion
-
-	Mapper meta.RESTMapper
-
-	Codec     runtime.Codec
-	Typer     runtime.ObjectTyper
-	Creater   runtime.ObjectCreater
-	Convertor runtime.ObjectConvertor
-	Linker    runtime.SelfLinker
-
 	Admit   admission.Interface
 	Context api.RequestContextMapper
 
 	MinRequestTimeout time.Duration
 }
-
-type ProxyDialerFunc func(network, addr string) (net.Conn, error)
 
 // TODO: Pipe these in through the apiserver cmd line
 const (
@@ -139,13 +118,6 @@ func (g *APIGroupVersion) newInstaller() *APIInstaller {
 func InstallSupport(mux Mux, ws *restful.WebService, enableResettingMetrics bool, checks ...healthz.HealthzChecker) {
 }
 
-// InstallLogsSupport registers the APIServer log support function into a mux.
-func InstallLogsSupport(mux Mux) {
-	// TODO: use restful: ws.Route(ws.GET("/logs/{logpath:*}").To(fileHandler))
-	// See github.com/emicklei/go-restful/blob/master/examples/restful-serve-static.go
-	//mux.Handle("/logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir("/var/log/"))))
-}
-
 func InstallRecoverHandler(container *restful.Container) {
 	container.RecoverHandler(logStackOnRecover)
 }
@@ -165,47 +137,6 @@ func logStackOnRecover(panicReason interface{}, httpWriter http.ResponseWriter) 
 
 	// TODO: make status unversioned or plumb enough of the request to deduce the requested API version
 	errorJSON(apierrors.NewGenericServerResponse(http.StatusInternalServerError, "", "", "", "", 0, false), latest.GroupOrDie("").Codec, httpWriter)
-}
-
-// Adds a service to return the supported api versions at the legacy /api.
-func AddApiWebService(container *restful.Container, apiPrefix string, versions []string) {
-	// TODO: InstallREST should register each version automatically
-
-	versionHandler := APIVersionHandler(versions[:]...)
-	ws := new(restful.WebService)
-	ws.Path(apiPrefix)
-	ws.Doc("get available API versions")
-	ws.Route(ws.GET("/").To(versionHandler).
-		Doc("get available API versions").
-		Operation("getAPIVersions").
-		Produces(restful.MIME_JSON).
-		Consumes(restful.MIME_JSON))
-	container.Add(ws)
-}
-
-// APIVersionHandler returns a handler which will list the provided versions as available.
-func APIVersionHandler(versions ...string) restful.RouteFunction {
-	return func(req *restful.Request, resp *restful.Response) {
-		// TODO: use restful's Response methods
-		writeJSON(http.StatusOK, api.Codec, &unversioned.APIVersions{Versions: versions}, resp.ResponseWriter, true)
-	}
-}
-
-// RootAPIHandler returns a handler which will list the provided groups and versions as available.
-func RootAPIHandler(groups []unversioned.APIGroup) restful.RouteFunction {
-	return func(req *restful.Request, resp *restful.Response) {
-		// TODO: use restful's Response methods
-		writeJSON(http.StatusOK, api.Codec, &unversioned.APIGroupList{Groups: groups}, resp.ResponseWriter, true)
-	}
-}
-
-// GroupHandler returns a handler which will return the api.GroupAndVersion of
-// the group.
-func GroupHandler(group unversioned.APIGroup) restful.RouteFunction {
-	return func(req *restful.Request, resp *restful.Response) {
-		// TODO: use restful's Response methods
-		writeJSON(http.StatusOK, api.Codec, &group, resp.ResponseWriter, true)
-	}
 }
 
 // write renders a returned runtime.Object to the response as a stream or an encoded object. If the object

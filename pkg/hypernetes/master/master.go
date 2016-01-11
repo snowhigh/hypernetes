@@ -9,92 +9,18 @@ import (
 
 	"k8s.io/kubernetes/pkg/admission"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/latest"
-	"k8s.io/kubernetes/pkg/api/rest"
 	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/auth/authenticator"
 	"k8s.io/kubernetes/pkg/auth/authorizer"
 	"k8s.io/kubernetes/pkg/auth/handlers"
 	"k8s.io/kubernetes/pkg/hypernetes/apiserver"
 	"k8s.io/kubernetes/pkg/registry/generic"
-	"k8s.io/kubernetes/pkg/storage"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/sets"
 
 	"github.com/emicklei/go-restful"
 	"github.com/golang/glog"
-	"golang.org/x/net/context"
 )
-
-// StorageDestinations is a mapping from API group & resource to
-// the underlying storage interfaces.
-type StorageDestinations struct {
-	APIGroups map[string]*StorageDestinationsForAPIGroup
-}
-
-type StorageDestinationsForAPIGroup struct {
-	Default   storage.Interface
-	Overrides map[string]storage.Interface
-}
-
-func NewStorageDestinations() StorageDestinations {
-	return StorageDestinations{
-		APIGroups: map[string]*StorageDestinationsForAPIGroup{},
-	}
-}
-
-func (s *StorageDestinations) AddAPIGroup(group string, defaultStorage storage.Interface) {
-	s.APIGroups[group] = &StorageDestinationsForAPIGroup{
-		Default:   defaultStorage,
-		Overrides: map[string]storage.Interface{},
-	}
-}
-
-func (s *StorageDestinations) AddStorageOverride(group, resource string, override storage.Interface) {
-	if _, ok := s.APIGroups[group]; !ok {
-		s.AddAPIGroup(group, nil)
-	}
-	if s.APIGroups[group].Overrides == nil {
-		s.APIGroups[group].Overrides = map[string]storage.Interface{}
-	}
-	s.APIGroups[group].Overrides[resource] = override
-}
-
-func (s *StorageDestinations) get(group, resource string) storage.Interface {
-	apigroup, ok := s.APIGroups[group]
-	if !ok {
-		glog.Errorf("No storage defined for API group: '%s'", apigroup)
-		return nil
-	}
-	if apigroup.Overrides != nil {
-		if client, exists := apigroup.Overrides[resource]; exists {
-			return client
-		}
-	}
-	return apigroup.Default
-}
-
-// Get all backends for all registered storage destinations.
-// Used for getting all instances for health validations.
-func (s *StorageDestinations) backends() []string {
-	backends := sets.String{}
-	for _, group := range s.APIGroups {
-		if group.Default != nil {
-			for _, backend := range group.Default.Backends(context.TODO()) {
-				backends.Insert(backend)
-			}
-		}
-		if group.Overrides != nil {
-			for _, storage := range group.Overrides {
-				for _, backend := range storage.Backends(context.TODO()) {
-					backends.Insert(backend)
-				}
-			}
-		}
-	}
-	return backends.List()
-}
 
 // Specifies the overrides for various API group versions.
 // This can be used to enable/disable entire group versions or specific resources.
@@ -107,17 +33,12 @@ type APIGroupVersionOverride struct {
 
 // Config is a structure used to configure a Master.
 type Config struct {
-	StorageDestinations StorageDestinations
-	// StorageVersions is a map between groups and their storage versions
-	StorageVersions map[string]string
-	EventTTL        time.Duration
+	EventTTL time.Duration
 	// allow downstream consumers to disable the core controller loops
 	EnableCoreControllers bool
-	EnableLogsSupport     bool
 	// Allows api group versions or specific resources to be conditionally enabled/disabled.
 	APIGroupVersionOverrides map[string]APIGroupVersionOverride
 	// allow downstream consumers to disable the index route
-	EnableIndex           bool
 	EnableProfiling       bool
 	EnableWatchCache      bool
 	APIPrefix             string
@@ -196,9 +117,6 @@ type Master struct {
 	extraServicePorts    []api.ServicePort
 	extraEndpointPorts   []api.EndpointPort
 
-	// storage contains the RESTful endpoints exposed by this master
-	storage map[string]rest.Storage
-
 	// "Outputs"
 	Handler         http.Handler
 	InsecureHandler http.Handler
@@ -252,7 +170,6 @@ func New(c *Config) *Master {
 	m := &Master{
 		rootWebService:           new(restful.WebService),
 		enableCoreControllers:    c.EnableCoreControllers,
-		enableLogsSupport:        c.EnableLogsSupport,
 		enableProfiling:          c.EnableProfiling,
 		enableWatchCache:         c.EnableWatchCache,
 		apiPrefix:                c.APIPrefix,
@@ -320,26 +237,14 @@ func NewHandlerContainer(mux *http.ServeMux) *restful.Container {
 // init initializes master.
 func (m *Master) init(c *Config) {
 
-	apiVersions := []string{}
+	if err := m.defaultAPIGroupVersion().InstallREST(m.handlerContainer); err != nil {
+		glog.Fatalf("Unable to setup basic API: %v", err)
+	}
 	// Install v1 unless disabled.
 	if !m.apiGroupVersionOverrides["hapi/v1"].Disable {
 		if err := m.api_v1().InstallREST(m.handlerContainer); err != nil {
 			glog.Fatalf("Unable to setup API v1: %v", err)
 		}
-		apiVersions = append(apiVersions, "v1")
-	}
-
-	apiserver.AddApiWebService(m.handlerContainer, c.APIPrefix, apiVersions)
-
-	// Register root handler.
-	// We do not register this using restful Webservice since we do not want to surface this in api docs.
-	// Allow master to be embedded in contexts which already have something registered at the root
-	if c.EnableIndex {
-		m.mux.HandleFunc("/", apiserver.IndexHandler(m.handlerContainer, m.muxHelper))
-	}
-
-	if c.EnableLogsSupport {
-		apiserver.InstallLogsSupport(m.muxHelper)
 	}
 
 	if c.EnableProfiling {
@@ -380,9 +285,6 @@ func (m *Master) init(c *Config) {
 
 	m.InsecureHandler = insecureHandler
 
-	// Install root web services
-	//m.handlerContainer.Add(m.rootWebService)
-
 	// TODO: Make this optional?  Consumers of master depend on this currently.
 	m.Handler = handler
 
@@ -412,13 +314,6 @@ func (m *Master) defaultAPIGroupVersion() *apiserver.APIGroupVersion {
 		Root:                m.apiPrefix,
 		RequestInfoResolver: m.newRequestInfoResolver(),
 
-		Mapper: latest.GroupOrDie("").RESTMapper,
-
-		Creater:   api.Scheme,
-		Convertor: api.Scheme,
-		Typer:     api.Scheme,
-		Linker:    latest.GroupOrDie("").SelfLinker,
-
 		Admit:   m.admissionControl,
 		Context: m.requestContextMapper,
 
@@ -428,13 +323,7 @@ func (m *Master) defaultAPIGroupVersion() *apiserver.APIGroupVersion {
 
 // api_v1 returns the resources and codec for API version v1.
 func (m *Master) api_v1() *apiserver.APIGroupVersion {
-	storage := make(map[string]rest.Storage)
-	for k, v := range m.storage {
-		storage[strings.ToLower(k)] = v
-	}
 	version := m.defaultAPIGroupVersion()
-	version.Storage = storage
-	version.GroupVersion = unversioned.GroupVersion{Version: "v1"}
-	version.Codec = v1.Codec
+	version.GroupVersion = unversioned.GroupVersion{Version: "v1.21"}
 	return version
 }

@@ -18,7 +18,6 @@ package keystone
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/golang/glog"
 	"github.com/rackspace/gophercloud"
@@ -50,9 +49,6 @@ func (keystoneAuthenticator *KeystoneAuthenticator) AuthenticatePassword(usernam
 
 // New returns a request authenticator that validates credentials using openstack keystone
 func NewKeystoneAuthenticator(authURL string) (*KeystoneAuthenticator, error) {
-	if !strings.HasPrefix(authURL, "https") {
-		return nil, errors.New("Auth URL should be secure and start with https")
-	}
 	if authURL == "" {
 		return nil, errors.New("Auth URL is empty")
 	}

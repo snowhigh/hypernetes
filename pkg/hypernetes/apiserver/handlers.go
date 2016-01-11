@@ -33,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/errors"
 	"k8s.io/kubernetes/pkg/auth/authorizer"
 	"k8s.io/kubernetes/pkg/httplog"
+	"k8s.io/kubernetes/pkg/hypernetes/httputils"
 	"k8s.io/kubernetes/pkg/util/sets"
 )
 
@@ -392,7 +393,7 @@ func WithAuthorizationCheck(handler http.Handler, getAttribs RequestAttributeGet
 			handler.ServeHTTP(w, req)
 			return
 		}
-		forbidden(w, req)
+		httputils.Forbidden(w, req)
 	})
 }
 
@@ -466,7 +467,7 @@ func (r *RequestInfoResolver) GetRequestInfo(req *http.Request) (RequestInfo, er
 		Verb:              strings.ToLower(req.Method),
 	}
 
-	currentParts := splitPath(req.URL.Path)
+	currentParts := httputils.SplitPath(req.URL.Path)
 	if len(currentParts) < 3 {
 		// return a non-resource request
 		return requestInfo, nil

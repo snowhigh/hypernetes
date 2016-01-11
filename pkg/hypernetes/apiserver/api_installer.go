@@ -3,13 +3,9 @@ package apiserver
 import (
 	"fmt"
 	"net/http"
-	"reflect"
 	"strings"
 	"time"
 
-	"k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/rest"
-	"k8s.io/kubernetes/pkg/conversion"
 	"k8s.io/kubernetes/pkg/hypernetes/apiserver/router/local"
 
 	"github.com/emicklei/go-restful"
@@ -29,14 +25,6 @@ type action struct {
 	Params []*restful.Parameter // List of parameters associated with the action.
 }
 
-// An interface to see if an object supports swagger documentation as a method
-type documentable interface {
-	SwaggerDoc() map[string]string
-}
-
-// errEmptyName is returned when API requests do not fill the name section of the path.
-var errEmptyName = errors.NewBadRequest("name must be provided")
-
 // Installs handlers for API resources.
 func (a *APIInstaller) Install(ws *restful.WebService) (errors []error) {
 	errors = make([]error, 0)
@@ -46,6 +34,10 @@ func (a *APIInstaller) Install(ws *restful.WebService) (errors []error) {
 		errors = append(errors, err)
 	}
 	err = a.registerContainerHandlers(ws)
+	if err != nil {
+		errors = append(errors, err)
+	}
+	err = a.registerMiscHandlers(ws)
 	if err != nil {
 		errors = append(errors, err)
 	}
@@ -79,6 +71,44 @@ func (a *APIInstaller) NewWebService() *restful.WebService {
 		"/build"
 */
 func (a *APIInstaller) registerMiscHandlers(ws *restful.WebService) error {
+	actions := []action{}
+
+	actions = append(actions, action{"GET", "/_ping", nil})
+	actions = append(actions, action{"GET", "/events", nil})
+	actions = append(actions, action{"GET", "/info", nil})
+	actions = append(actions, action{"GET", "/version", nil})
+
+	actions = append(actions, action{"POST", "/auth", nil})
+	actions = append(actions, action{"POST", "/commit", nil})
+	actions = append(actions, action{"POST", "/build", nil})
+
+	for _, action := range actions {
+		m := monitorFilter(action.Verb, "misc")
+		switch action.Verb {
+		case "GET":
+			doc := "read the misc resources"
+			route := ws.GET(action.Path).To(local.HandleMiscAction(action.Verb, action.Path[1:])).
+				Filter(m).
+				Doc(doc).
+				Operation("get"+action.Path[1:]).
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			ws.Route(route)
+			break
+		case "POST":
+			doc := "update the misc resources"
+			route := ws.POST(action.Path).To(local.HandleMiscAction(action.Verb, action.Path[1:])).
+				Filter(m).
+				Doc(doc).
+				Operation("post"+action.Path[1:]).
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			ws.Route(route)
+			break
+		default:
+			return fmt.Errorf("unsupported action")
+		}
+	}
 	return nil
 }
 
@@ -179,7 +209,6 @@ func (a *APIInstaller) registerImageHandlers(ws *restful.WebService) error {
 		"/containers/{name:.*}/logs"
 		"/containers/{name:.*}/stats"
 		"/containers/{name:.*}/attach/ws"
-		"/exec/{id:.*}/json"
 		"/containers/{name:.*}/archive"
 	// POST
 		"/containers/create"
@@ -203,7 +232,93 @@ func (a *APIInstaller) registerImageHandlers(ws *restful.WebService) error {
 		"/containers/{name:.*}"
 */
 func (a *APIInstaller) registerContainerHandlers(ws *restful.WebService) error {
+	nameParam := ws.PathParameter("name", "name of the container").DataType("string")
+	params := []*restful.Parameter{nameParam}
+	actions := []action{}
 
+	actions = append(actions, action{"GET", "/containers/json", nil})
+	actions = append(actions, action{"GET", "/containers/{name}/export", params})
+	actions = append(actions, action{"GET", "/containers/{name}/changes", params})
+	actions = append(actions, action{"GET", "/containers/{name}/json", params})
+	actions = append(actions, action{"GET", "/containers/{name}/top", params})
+	actions = append(actions, action{"GET", "/containers/{name}/logs", params})
+	actions = append(actions, action{"GET", "/containers/{name}/stats", params})
+	actions = append(actions, action{"GET", "/containers/{name}/archive", params})
+
+	actions = append(actions, action{"POST", "/containers/create", nil})
+	actions = append(actions, action{"POST", "/containers/{name}/kill", params})
+	actions = append(actions, action{"POST", "/containers/{name}/pause", params})
+	actions = append(actions, action{"POST", "/containers/{name}/unpause", params})
+	actions = append(actions, action{"POST", "/containers/{name}/restart", params})
+	actions = append(actions, action{"POST", "/containers/{name}/start", params})
+	actions = append(actions, action{"POST", "/containers/{name}/stop", params})
+	actions = append(actions, action{"POST", "/containers/{name}/wait", params})
+	actions = append(actions, action{"POST", "/containers/{name}/resize", params})
+	actions = append(actions, action{"POST", "/containers/{name}/attach", params})
+	actions = append(actions, action{"POST", "/containers/{name}/copy", params})
+	actions = append(actions, action{"POST", "/containers/{name}/exec", params})
+	actions = append(actions, action{"POST", "/containers/{name}/rename", params})
+
+	actions = append(actions, action{"PUT", "/containers/{name}/archive", params})
+	actions = append(actions, action{"DELETE", "/containers/{name}", params})
+
+	for _, action := range actions {
+		m := monitorFilter(action.Verb, "containers")
+		hasParams := false
+		if action.Params != nil {
+			hasParams = true
+		}
+		fields := strings.Split(action.Path, "/")
+		subAction := fields[len(fields)-1]
+		switch action.Verb {
+		case "GET":
+			doc := "read the specified containers"
+			route := ws.GET(action.Path).To(local.HandleContainersAction(action.Verb, subAction, hasParams)).
+				Filter(m).
+				Doc(doc).
+				Operation("getcontainers"+subAction).
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		case "POST":
+			doc := "update the specified containers"
+			route := ws.POST(action.Path).To(local.HandleContainersAction(action.Verb, subAction, hasParams)).
+				Filter(m).
+				Doc(doc).
+				Operation("postcontainers"+subAction).
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		case "PUT":
+			doc := "put the specified containers"
+			route := ws.PUT(action.Path).To(local.HandleContainersAction(action.Verb, subAction, hasParams)).
+				Filter(m).
+				Doc(doc).
+				Operation("putcontainers").
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		case "DELETE":
+			doc := "delete the specified containers"
+			route := ws.DELETE(action.Path).To(local.HandleContainersAction(action.Verb, subAction, hasParams)).
+				Filter(m).
+				Doc(doc).
+				Operation("deletecontainers").
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		default:
+			return fmt.Errorf("unsupported action")
+		}
+	}
 	return nil
 }
 
@@ -218,49 +333,6 @@ func addParams(route *restful.RouteBuilder, params []*restful.Parameter) {
 	for _, param := range params {
 		route.Param(param)
 	}
-}
-
-// addObjectParams converts a runtime.Object into a set of go-restful Param() definitions on the route.
-// The object must be a pointer to a struct; only fields at the top level of the struct that are not
-// themselves interfaces or structs are used; only fields with a json tag that is non empty (the standard
-// Go JSON behavior for omitting a field) become query parameters. The name of the query parameter is
-// the JSON field name. If a description struct tag is set on the field, that description is used on the
-// query parameter. In essence, it converts a standard JSON top level object into a query param schema.
-func addObjectParams(ws *restful.WebService, route *restful.RouteBuilder, obj interface{}) error {
-	sv, err := conversion.EnforcePtr(obj)
-	if err != nil {
-		return err
-	}
-	st := sv.Type()
-	switch st.Kind() {
-	case reflect.Struct:
-		for i := 0; i < st.NumField(); i++ {
-			name := st.Field(i).Name
-			sf, ok := st.FieldByName(name)
-			if !ok {
-				continue
-			}
-			switch sf.Type.Kind() {
-			case reflect.Interface, reflect.Struct:
-			default:
-				jsonTag := sf.Tag.Get("json")
-				if len(jsonTag) == 0 {
-					continue
-				}
-				jsonName := strings.SplitN(jsonTag, ",", 2)[0]
-				if len(jsonName) == 0 {
-					continue
-				}
-
-				var desc string
-				if docable, ok := obj.(documentable); ok {
-					desc = docable.SwaggerDoc()[jsonName]
-				}
-				route.Param(ws.QueryParameter(jsonName, desc).DataType(typeToJSON(sf.Type.String())))
-			}
-		}
-	}
-	return nil
 }
 
 // TODO: this is incomplete, expand as needed.
@@ -284,14 +356,4 @@ func typeToJSON(typeName string) string {
 	default:
 		return typeName
 	}
-}
-
-// defaultStorageMetadata provides default answers to rest.StorageMetadata.
-type defaultStorageMetadata struct{}
-
-// defaultStorageMetadata implements rest.StorageMetadata
-var _ rest.StorageMetadata = defaultStorageMetadata{}
-
-func (defaultStorageMetadata) ProducesMIMETypes(verb string) []string {
-	return nil
 }

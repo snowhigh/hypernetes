@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package apiserver
+package httputils
 
 import (
 	"fmt"
@@ -81,8 +81,8 @@ func badGatewayError(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "Bad Gateway: %#v", req.RequestURI)
 }
 
-// forbidden renders a simple forbidden error
-func forbidden(w http.ResponseWriter, req *http.Request) {
+// Forbidden renders a simple forbidden error
+func Forbidden(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusForbidden)
 	fmt.Fprintf(w, "Forbidden: %#v", req.RequestURI)
 }

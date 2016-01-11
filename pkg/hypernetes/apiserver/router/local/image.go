@@ -3,6 +3,8 @@ package local
 import (
 	"net/http"
 
+	"k8s.io/kubernetes/pkg/hypernetes/httputils"
+
 	"github.com/emicklei/go-restful"
 )
 
@@ -32,14 +34,12 @@ func HandleImagesAction(verb, action string, hasParams bool) restful.RouteFuncti
 		}
 	case "DELETE":
 		return deleteImages
-	default:
-		return nil
 	}
 	return nil
 }
 
 func getImagesGet(req *restful.Request, resp *restful.Response) {
-	writeRawJSON(http.StatusOK, nil, resp.ResponseWriter)
+	httputils.WriteRawJSON(http.StatusOK, nil, resp.ResponseWriter)
 }
 
 func getImagesSearch(req *restful.Request, resp *restful.Response) {

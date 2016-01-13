@@ -10,15 +10,14 @@ import (
 	"path"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	systemd "github.com/coreos/go-systemd/daemon"
-	apiutil "k8s.io/kubernetes/pkg/api/util"
-	"k8s.io/kubernetes/pkg/apiserver"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	hapiserver "k8s.io/kubernetes/pkg/hypernetes/apiserver"
 	hmaster "k8s.io/kubernetes/pkg/hypernetes/master"
+	"k8s.io/kubernetes/pkg/hypernetes/storage"
+	"k8s.io/kubernetes/pkg/hypernetes/storage/mongodb"
 	"k8s.io/kubernetes/pkg/util"
 
 	"github.com/golang/glog"
@@ -46,6 +45,7 @@ type APIServer struct {
 	CertDirectory        string
 	APIPrefix            string
 	KeystoneURL          string
+	MongodbURL           string
 	MaxRequestsInFlight  int
 	MinRequestTimeout    int
 	LongRunningRequestRE string
@@ -57,6 +57,7 @@ func NewAPIServer() *APIServer {
 		InsecurePort:        8888,
 		InsecureBindAddress: net.ParseIP("127.0.0.1"),
 		BindAddress:         net.ParseIP("0.0.0.0"),
+		MongodbURL:          "127.0.0.1",
 		SecurePort:          6443,
 		APIPrefix:           "/hapi",
 	}
@@ -121,28 +122,15 @@ func (s *APIServer) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&s.APIPrefix, "api-prefix", s.APIPrefix, "The prefix for API requests on the server. Default '/api'.")
 	fs.MarkDeprecated("api-prefix", "--api-prefix is deprecated and will be removed when the v1 API is retired.")
 	fs.StringVar(&s.KeystoneURL, "keystone-url", s.KeystoneURL, "If passed, activates the keystone authentication plugin")
+	fs.StringVar(&s.MongodbURL, "mongodb-url", s.MongodbURL, "Hype-APIServer backend storage URL")
 	fs.IntVar(&s.MaxRequestsInFlight, "max-requests-inflight", 400, "The maximum number of requests in flight at a given time.  When the server exceeds this, it rejects requests.  Zero for no limit.")
 	fs.IntVar(&s.MinRequestTimeout, "min-request-timeout", 1800, "An optional field indicating the minimum number of seconds a handler must keep a request open before timing it out. Currently only honored by the watch request handler, which picks a randomized value above this number as the connection timeout, to spread out load.")
 	fs.StringVar(&s.LongRunningRequestRE, "long-running-request-regexp", defaultLongRunningRequestRE, "A regular expression matching long running requests which should be excluded from maximum inflight request handling.")
 }
 
-// convert to a map between group and groupVersions.
-func generateStorageVersionMap(legacyVersion string, storageVersions string) map[string]string {
-	storageVersionMap := map[string]string{}
-	if legacyVersion != "" {
-		storageVersionMap[""] = legacyVersion
-	}
-	if storageVersions != "" {
-		groupVersions := strings.Split(storageVersions, ",")
-		for _, gv := range groupVersions {
-			storageVersionMap[apiutil.GetGroup(gv)] = gv
-		}
-	}
-	return storageVersionMap
-}
-
 // Run runs the specified APIServer.  This should never exit.
 func (s *APIServer) Run(_ []string) error {
+	var mongodbStorage storage.Interface
 
 	clientConfig := &client.Config{
 		Host: net.JoinHostPort(s.InsecureBindAddress.String(), strconv.Itoa(s.InsecurePort)),
@@ -152,7 +140,13 @@ func (s *APIServer) Run(_ []string) error {
 		glog.Fatalf("Invalid server address: %v", err)
 	}
 
-	authenticator, err := apiserver.NewAuthenticator(apiserver.AuthenticatorConfig{
+	mongodbStorage, err = mongodb.NewMongodbStorage(s.MongodbURL)
+	if err != nil {
+		return err
+	}
+
+	authenticator, err := hapiserver.NewAuthenticator(hapiserver.AuthenticatorConfig{
+		Storage:     mongodbStorage,
 		KeystoneURL: s.KeystoneURL,
 	})
 
@@ -176,6 +170,7 @@ func (s *APIServer) Run(_ []string) error {
 		Authorizer:            authorizer,
 	}
 	m := hmaster.New(config)
+	m.Storage = mongodbStorage
 
 	// We serve on 2 ports.  See docs/accessing_the_api.md
 	secureLocation := ""
@@ -203,7 +198,7 @@ func (s *APIServer) Run(_ []string) error {
 		handler := hapiserver.TimeoutHandler(m.Handler, longRunningTimeout)
 		secureServer := &http.Server{
 			Addr:           secureLocation,
-			Handler:        hapiserver.MaxInFlightLimit(sem, longRunningRE, apiserver.RecoverPanics(handler)),
+			Handler:        hapiserver.MaxInFlightLimit(sem, longRunningRE, hapiserver.RecoverPanics(handler)),
 			MaxHeaderBytes: 1 << 20,
 			TLSConfig: &tls.Config{
 				// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability)

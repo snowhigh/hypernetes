@@ -14,7 +14,7 @@ import (
 	"k8s.io/kubernetes/pkg/auth/authorizer"
 	"k8s.io/kubernetes/pkg/auth/handlers"
 	"k8s.io/kubernetes/pkg/hypernetes/apiserver"
-	"k8s.io/kubernetes/pkg/registry/generic"
+	"k8s.io/kubernetes/pkg/hypernetes/storage"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/sets"
 
@@ -77,14 +77,9 @@ type Config struct {
 	KubernetesServiceNodePort int
 }
 
-func (c *Config) storageDecorator() generic.StorageDecorator {
-	return generic.UndecoratedStorage
-}
-
-type InstallSSHKey func(user string, data []byte) error
-
 // Master contains state for a Kubernetes cluster master/api server.
 type Master struct {
+	Storage storage.Interface
 	// "Inputs", Copied from Config
 	cacheTimeout      time.Duration
 	minRequestTimeout time.Duration

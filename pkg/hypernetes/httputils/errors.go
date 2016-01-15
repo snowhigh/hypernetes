@@ -69,6 +69,12 @@ func errToAPIStatus(err error) *unversioned.Status {
 	}
 }
 
+// NotSupport renders a simple not support error.
+func NotSupport(w http.ResponseWriter, req *http.Request) {
+	w.WriteHeader(http.StatusInternalServerError)
+	fmt.Fprintf(w, "Not Support: %#v", req.RequestURI)
+}
+
 // notFound renders a simple not found error.
 func notFound(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNotFound)

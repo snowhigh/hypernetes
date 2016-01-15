@@ -3,8 +3,8 @@ package keystone
 import (
 	"errors"
 
-	"k8s.io/kubernetes/pkg/auth/authorizer"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/hypernetes/auth/authorizer"
 
 	"github.com/golang/glog"
 	"github.com/rackspace/gophercloud"

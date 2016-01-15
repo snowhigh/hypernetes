@@ -70,15 +70,18 @@ func getContainersLogs(req *restful.Request, resp *restful.Response) {
 }
 
 func getContainersExport(req *restful.Request, resp *restful.Response) {
+	unsupportedAction(req, resp)
 }
 
 func getContainersChanges(req *restful.Request, resp *restful.Response) {
+	unsupportedAction(req, resp)
 }
 
 func getContainersTop(req *restful.Request, resp *restful.Response) {
 }
 
 func getContainersArchive(req *restful.Request, resp *restful.Response) {
+	unsupportedAction(req, resp)
 }
 
 func postContainersStart(req *restful.Request, resp *restful.Response) {
@@ -115,12 +118,14 @@ func postContainersResize(req *restful.Request, resp *restful.Response) {
 }
 
 func postContainersCopy(req *restful.Request, resp *restful.Response) {
+	unsupportedAction(req, resp)
 }
 
 func postContainersExec(req *restful.Request, resp *restful.Response) {
 }
 
 func putContainersArchive(req *restful.Request, resp *restful.Response) {
+	unsupportedAction(req, resp)
 }
 
 func deleteContainers(req *restful.Request, resp *restful.Response) {

@@ -6,6 +6,7 @@ import (
 	"k8s.io/kubernetes/pkg/hypernetes/httputils"
 	"k8s.io/kubernetes/pkg/version"
 
+	"github.com/docker/engine-api/types"
 	"github.com/emicklei/go-restful"
 )
 
@@ -16,7 +17,7 @@ func HandleMiscAction(verb, action string) restful.RouteFunction {
 		case "_ping":
 			return unsupportedAction
 		case "events":
-			return getEvents
+			return unsupportedAction
 		case "info":
 			return getInfo
 		case "version":
@@ -40,10 +41,10 @@ func getVersion(req *restful.Request, resp *restful.Response) {
 }
 
 func getInfo(req *restful.Request, resp *restful.Response) {
-}
-
-func getEvents(req *restful.Request, resp *restful.Response) {
+	info := types.Info{}
+	httputils.WriteRawJSON(http.StatusOK, info, resp.ResponseWriter)
 }
 
 func unsupportedAction(req *restful.Request, resp *restful.Response) {
+	httputils.NotSupport(resp, req.Request)
 }

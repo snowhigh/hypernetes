@@ -159,7 +159,7 @@ func (a *APIInstaller) registerImageHandlers(ws *restful.WebService) error {
 		switch action.Verb {
 		case "GET":
 			doc := "read the specified images"
-			route := ws.GET(action.Path).To(local.HandleImagesAction(action.Verb, subAction, hasParams)).
+			route := ws.GET(action.Path).To(local.HandleImagesAction(action.Verb, subAction, hasParams, a.group.Storage)).
 				Filter(m).
 				Doc(doc).
 				Operation("getimages"+subAction).
@@ -170,7 +170,7 @@ func (a *APIInstaller) registerImageHandlers(ws *restful.WebService) error {
 			break
 		case "POST":
 			doc := "update the specified images"
-			route := ws.POST(action.Path).To(local.HandleImagesAction(action.Verb, subAction, hasParams)).
+			route := ws.POST(action.Path).To(local.HandleImagesAction(action.Verb, subAction, hasParams, a.group.Storage)).
 				Filter(m).
 				Doc(doc).
 				Operation("postimages"+subAction).
@@ -181,7 +181,7 @@ func (a *APIInstaller) registerImageHandlers(ws *restful.WebService) error {
 			break
 		case "DELETE":
 			doc := "delete the specified image"
-			route := ws.DELETE(action.Path).To(local.HandleImagesAction(action.Verb, subAction, hasParams)).
+			route := ws.DELETE(action.Path).To(local.HandleImagesAction(action.Verb, subAction, hasParams, a.group.Storage)).
 				Filter(m).
 				Doc(doc).
 				Operation("deleteimages").
@@ -322,6 +322,24 @@ func (a *APIInstaller) registerContainerHandlers(ws *restful.WebService) error {
 	return nil
 }
 
+// GET /networks
+// GET /networks/{id}
+// POST /networks/create
+// POST /networks/{id}/connect
+// POST /networks/{id}/disconnect
+// DELETE /networks/{id}
+func (a *APIInstaller) registerNetworkHandlers(ws *restful.WebService) error {
+	return nil
+}
+
+// Get /volumes
+// Get /volumes/{name}
+// POST /volumes/create
+// DELETE /volumes{name}
+func (a *APIInstaller) registerVolumeHandlers(ws *restful.WebService) error {
+	return nil
+}
+
 // Wraps a http.Handler function inside a restful.RouteFunction
 func routeFunction(handler http.Handler) restful.RouteFunction {
 	return func(restReq *restful.Request, restResp *restful.Response) {
@@ -332,28 +350,5 @@ func routeFunction(handler http.Handler) restful.RouteFunction {
 func addParams(route *restful.RouteBuilder, params []*restful.Parameter) {
 	for _, param := range params {
 		route.Param(param)
-	}
-}
-
-// TODO: this is incomplete, expand as needed.
-// Convert the name of a golang type to the name of a JSON type
-func typeToJSON(typeName string) string {
-	switch typeName {
-	case "bool", "*bool":
-		return "boolean"
-	case "uint8", "*uint8", "int", "*int", "int32", "*int32", "int64", "*int64", "uint32", "*uint32", "uint64", "*uint64":
-		return "integer"
-	case "float64", "*float64", "float32", "*float32":
-		return "number"
-	case "unversioned.Time", "*unversioned.Time":
-		return "string"
-	case "byte", "*byte":
-		return "string"
-	case "[]string", "[]*string":
-		// TODO: Fix this when go-restful supports a way to specify an array query param:
-		// https://github.com/emicklei/go-restful/issues/225
-		return "string"
-	default:
-		return typeName
 	}
 }

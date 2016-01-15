@@ -32,6 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/apiserver/metrics"
 	"k8s.io/kubernetes/pkg/healthz"
 	"k8s.io/kubernetes/pkg/hypernetes/httputils"
+	"k8s.io/kubernetes/pkg/hypernetes/storage"
 	"k8s.io/kubernetes/pkg/util"
 	utilerrors "k8s.io/kubernetes/pkg/util/errors"
 
@@ -61,6 +62,7 @@ type Mux interface {
 // Where 'storage_key' points to a rest.Storage object stored in storage.
 // This object should contain all parameterization necessary for running a particular API version
 type APIGroupVersion struct {
+	Storage      storage.Interface
 	Root         string
 	GroupVersion unversioned.GroupVersion
 

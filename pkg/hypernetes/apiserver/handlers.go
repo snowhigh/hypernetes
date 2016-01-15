@@ -31,20 +31,11 @@ import (
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/auth/authorizer"
 	"k8s.io/kubernetes/pkg/httplog"
+	"k8s.io/kubernetes/pkg/hypernetes/auth/authorizer"
 	"k8s.io/kubernetes/pkg/hypernetes/httputils"
 	"k8s.io/kubernetes/pkg/util/sets"
 )
-
-// specialVerbs contains just strings which are used in REST paths for special actions that don't fall under the normal
-// CRUDdy GET/POST/PUT/DELETE actions on REST objects.
-// TODO: find a way to keep this up to date automatically.  Maybe dynamically populate list as handlers added to
-// master's Mux.
-var specialVerbs = sets.NewString("proxy", "redirect", "watch")
-
-// specialVerbsNoSubresources contains root verbs which do not allow subresources
-var specialVerbsNoSubresources = sets.NewString("proxy", "redirect")
 
 // Constant for the retry-after interval on rate limiting.
 // TODO: maybe make this dynamic? or user-adjustable?
@@ -368,6 +359,7 @@ func (r *requestAttributeGetter) GetAttribs(req *http.Request) authorizer.Attrib
 	// Start with common attributes that apply to resource and non-resource requests
 	attribs.ResourceRequest = requestInfo.IsResourceRequest
 	attribs.Path = requestInfo.Path
+	attribs.Action = requestInfo.Action
 	attribs.Verb = requestInfo.Verb
 
 	// If the request was for a resource in an API group, include that info
@@ -376,11 +368,7 @@ func (r *requestAttributeGetter) GetAttribs(req *http.Request) authorizer.Attrib
 	// If a path follows the conventions of the REST object store, then
 	// we can extract the resource.  Otherwise, not.
 	attribs.Resource = requestInfo.Resource
-
-	// If the request specifies a namespace, then the namespace is filled in.
-	// Assumes there is no empty string namespace.  Unspecified results
-	// in empty (does not understand defaulting rules.)
-	attribs.Namespace = requestInfo.Namespace
+	attribs.Name = requestInfo.Name
 
 	return &attribs
 }
@@ -402,25 +390,17 @@ type RequestInfo struct {
 	// IsResourceRequest indicates whether or not the request is for an API resource or subresource
 	IsResourceRequest bool
 	// Path is the URL path of the request
-	Path string
-	// Verb is the kube verb associated with the request for API requests, not the http verb.  This includes things like list and watch.
-	// for non-resource requests, this is the lowercase http verb
-	Verb string
+	Path   string
+	Verb   string
+	Action string
 
 	APIPrefix  string
 	APIGroup   string
 	APIVersion string
-	Namespace  string
-	// Resource is the name of the resource being requested.  This is not the kind.  For example: pods
+	// Resource is the name of the resource being requested.  This is not the kind.  For example: containers, images
 	Resource string
-	// Subresource is the name of the subresource being requested.  This is a different resource, scoped to the parent resource, but it may have a different kind.
-	// For instance, /pods has the resource "pods" and the kind "Pod", while /pods/foo/status has the resource "pods", the sub resource "status", and the kind "Pod"
-	// (because status operates on pods). The binding resource for a pod though may be /pods/foo/binding, which has resource "pods", subresource "binding", and kind "Binding".
-	Subresource string
 	// Name is empty for some verbs, but if the request directly indicates a name (not in body content) then this field is filled in.
 	Name string
-	// Parts are the path parts for the request, always starting with /{resource}/{name}
-	Parts []string
 }
 
 type RequestInfoResolver struct {
@@ -428,43 +408,30 @@ type RequestInfoResolver struct {
 	GrouplessAPIPrefixes sets.String
 }
 
-// TODO write an integration test against the swagger doc to test the RequestInfo and match up behavior to responses
 // GetRequestInfo returns the information from the http request.  If error is not nil, RequestInfo holds the information as best it is known before the failure
 // It handles both resource and non-resource requests and fills in all the pertinent information for each.
 // Valid Inputs:
-// Resource paths
-// /apis/{api-group}/{version}/namespaces
-// /api/{version}/namespaces
-// /api/{version}/namespaces/{namespace}
-// /api/{version}/namespaces/{namespace}/{resource}
-// /api/{version}/namespaces/{namespace}/{resource}/{resourceName}
-// /api/{version}/{resource}
-// /api/{version}/{resource}/{resourceName}
+// Resource paths without action
+// /hapi/{version}/info
+// /hapi/{version}/version
+// /hapi/{version}/volumes
+// /hapi/{version}/networks
 //
-// Special verbs without subresources:
-// /api/{version}/proxy/{resource}/{resourceName}
-// /api/{version}/proxy/namespaces/{namespace}/{resource}/{resourceName}
-// /api/{version}/redirect/namespaces/{namespace}/{resource}/{resourceName}
-// /api/{version}/redirect/{resource}/{resourceName}
-//
-// Special verbs with subresources:
-// /api/{version}/watch/{resource}
-// /api/{version}/watch/namespaces/{namespace}/{resource}
-//
-// NonResource paths
-// /apis/{api-group}/{version}
-// /apis/{api-group}
-// /apis
-// /api/{version}
-// /api
-// /healthz
+// Resource paths with action
+// /hapi/{version}/images/json
+// /hapi/{version}/images/{name}/json
+// /hapi/{version}/images/{name}/history
+// /hapi/{version}/images/{name}/list
+// /hapi/{version}/containers/json
+// /hapi/{version}/containers/{name}/json
+// /hapi/{version}/{resource}/{resourceName}/{action}
 // /
 func (r *RequestInfoResolver) GetRequestInfo(req *http.Request) (RequestInfo, error) {
 	// start with a non-resource request until proven otherwise
 	requestInfo := RequestInfo{
 		IsResourceRequest: false,
 		Path:              req.URL.Path,
-		Verb:              strings.ToLower(req.Method),
+		Verb:              req.Method,
 	}
 
 	currentParts := httputils.SplitPath(req.URL.Path)
@@ -495,65 +462,31 @@ func (r *RequestInfoResolver) GetRequestInfo(req *http.Request) (RequestInfo, er
 	requestInfo.APIVersion = currentParts[0]
 	currentParts = currentParts[1:]
 
-	// handle input of form /{specialVerb}/*
-	if specialVerbs.Has(currentParts[0]) {
-		if len(currentParts) < 2 {
-			return requestInfo, fmt.Errorf("unable to determine kind and namespace from url, %v", req.URL)
+	length := len(currentParts)
+	if length == 1 {
+		if currentParts[0] == "networks" || currentParts[0] == "volumes" {
+			requestInfo.Resource = currentParts[0]
+		} else {
+			requestInfo.Action = currentParts[0]
 		}
-
-		requestInfo.Verb = currentParts[0]
-		currentParts = currentParts[1:]
-
 	} else {
-		switch req.Method {
-		case "POST":
-			requestInfo.Verb = "create"
-		case "GET", "HEAD":
-			requestInfo.Verb = "get"
-		case "PUT":
-			requestInfo.Verb = "update"
-		case "PATCH":
-			requestInfo.Verb = "patch"
-		case "DELETE":
-			requestInfo.Verb = "delete"
-		default:
-			requestInfo.Verb = ""
-		}
-	}
-
-	// URL forms: /namespaces/{namespace}/{kind}/*, where parts are adjusted to be relative to kind
-	if currentParts[0] == "namespaces" {
-		if len(currentParts) > 1 {
-			requestInfo.Namespace = currentParts[1]
-
-			// if there is another step after the namespace name and it is not a known namespace subresource
-			// move currentParts to include it as a resource in its own right
-			if len(currentParts) > 2 {
-				currentParts = currentParts[2:]
+		requestInfo.Resource = currentParts[0]
+		if length == 2 {
+			requestInfo.Action = currentParts[1]
+			if req.Method == "DELETE" {
+				requestInfo.Action = "delete"
+				requestInfo.Name = currentParts[1]
+			} else if currentParts[1] == "networks" || currentParts[1] == "volumes" {
+				// GET /networks/{id}
+				// GET /volumes/{name}
+				requestInfo.Action = "get"
+				requestInfo.Name = currentParts[1]
 			}
 		}
-	} else {
-		requestInfo.Namespace = api.NamespaceNone
-	}
-
-	// parsing successful, so we now know the proper value for .Parts
-	requestInfo.Parts = currentParts
-
-	// parts look like: resource/resourceName/subresource/other/stuff/we/don't/interpret
-	switch {
-	case len(requestInfo.Parts) >= 3 && !specialVerbsNoSubresources.Has(requestInfo.Verb):
-		requestInfo.Subresource = requestInfo.Parts[2]
-		fallthrough
-	case len(requestInfo.Parts) >= 2:
-		requestInfo.Name = requestInfo.Parts[1]
-		fallthrough
-	case len(requestInfo.Parts) >= 1:
-		requestInfo.Resource = requestInfo.Parts[0]
-	}
-
-	// if there's no name on the request and we thought it was a get before, then the actual verb is a list
-	if len(requestInfo.Name) == 0 && requestInfo.Verb == "get" {
-		requestInfo.Verb = "list"
+		if length == 3 {
+			requestInfo.Name = currentParts[1]
+			requestInfo.Action = currentParts[2]
+		}
 	}
 
 	return requestInfo, nil

@@ -32,12 +32,13 @@ func (a *AccesskeyAuthenticator) AuthenticateRequest(req *http.Request) (user.In
 		return nil, false, nil
 	}
 	accesskey, signatureRequest := fields[0], fields[1]
-	authReq, err := a.storage.Get(auth.Database, auth.Table, accesskey)
+	var authReq auth.AuthItem
+	err := a.storage.Get(auth.Database, auth.AuthTable, "accesskey", accesskey, &authReq)
 	if err != nil {
 		glog.Error(err)
 		return nil, false, err
 	}
-	if signature, err := httputils.GetSign(authReq, req); err != nil {
+	if signature, err := httputils.GetSign(&authReq, req); err != nil {
 		glog.Error(err)
 		return nil, false, err
 	} else {
@@ -46,7 +47,7 @@ func (a *AccesskeyAuthenticator) AuthenticateRequest(req *http.Request) (user.In
 		}
 	}
 
-	return &user.DefaultInfo{Tenant: authReq.TenantID}, true, nil
+	return &user.DefaultInfo{Name: authReq.UserID, Tenant: authReq.TenantID}, true, nil
 }
 
 // NewAccesskeyAuthenticator

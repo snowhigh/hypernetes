@@ -139,6 +139,7 @@ func (s *APIServer) Run(_ []string) error {
 	if err != nil {
 		glog.Fatalf("Invalid server address: %v", err)
 	}
+	_ = client
 
 	mongodbStorage, err = mongodb.NewMongodbStorage(s.MongodbURL)
 	if err != nil {
@@ -154,7 +155,7 @@ func (s *APIServer) Run(_ []string) error {
 		glog.Fatalf("Invalid Authentication Config: %v", err)
 	}
 
-	authorizer, err := hapiserver.NewAuthorizerFromAuthorizationConfig(client, s.KeystoneURL)
+	authorizer, err := hapiserver.NewAuthorizerFromAuthorizationConfig(mongodbStorage)
 	if err != nil {
 		glog.Fatalf("Invalid Authorization Config: %v", err)
 	}
@@ -168,9 +169,9 @@ func (s *APIServer) Run(_ []string) error {
 		PublicAddress:         s.AdvertiseAddress,
 		Authenticator:         authenticator,
 		Authorizer:            authorizer,
+		Storage:               mongodbStorage,
 	}
 	m := hmaster.New(config)
-	m.Storage = mongodbStorage
 
 	// We serve on 2 ports.  See docs/accessing_the_api.md
 	secureLocation := ""

@@ -1,7 +1,6 @@
 package mongodb
 
 import (
-	"k8s.io/kubernetes/pkg/hypernetes/auth"
 	"k8s.io/kubernetes/pkg/hypernetes/storage"
 
 	"github.com/golang/glog"
@@ -26,8 +25,8 @@ type mongodbHelper struct {
 }
 
 // Create adds a new entry for table of database
-func (h *mongodbHelper) Create(database, table string, auth auth.AuthItem) error {
-	err := h.session.DB(database).C(table).Insert(&auth)
+func (h *mongodbHelper) Create(database, table string, data interface{}) error {
+	err := h.session.DB(database).C(table).Insert(data)
 	if err != nil {
 		glog.Error(err)
 		return err
@@ -36,19 +35,19 @@ func (h *mongodbHelper) Create(database, table string, auth auth.AuthItem) error
 }
 
 // Get gets an existed item from table of database
-func (h *mongodbHelper) Get(database, table, accesskey string) (*auth.AuthItem, error) {
-	auth := &auth.AuthItem{}
-	err := h.session.DB(database).C(table).Find(bson.M{"accesskey": accesskey}).One(&auth)
+func (h *mongodbHelper) Get(database, table, key, value string, data interface{}) error {
+	err := h.session.DB(database).C(table).Find(bson.M{key: value}).One(data)
 	if err != nil {
 		glog.Error(err)
-		return nil, err
+		return err
 	}
-	return auth, nil
+	return nil
 }
 
 // Delete removes the specified accesskey
-func (h *mongodbHelper) Delete(database, table, accesskey string) error {
-	a, err := h.Get(database, table, accesskey)
+func (h *mongodbHelper) Delete(database, table, key, value string) error {
+	var a interface{}
+	err := h.Get(database, table, key, value, &a)
 	if err != nil {
 		glog.Error(err)
 		return err
@@ -61,13 +60,14 @@ func (h *mongodbHelper) Delete(database, table, accesskey string) error {
 }
 
 // Set
-func (h *mongodbHelper) Set(database, table, accesskey string, auth auth.AuthItem) error {
-	oldAuth, err := h.Get(database, table, accesskey)
+func (h *mongodbHelper) Set(database, table, key, value string, data interface{}) error {
+	var old interface{}
+	err := h.Get(database, table, key, value, &old)
 	if err != nil {
 		glog.Error(err)
 		return err
 	}
-	if err = h.session.DB(database).C(table).Update(oldAuth, &auth); err != nil {
+	if err = h.session.DB(database).C(table).Update(old, &data); err != nil {
 		glog.Error(err)
 		return err
 	}

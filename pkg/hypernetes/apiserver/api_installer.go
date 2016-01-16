@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"k8s.io/kubernetes/pkg/hypernetes/apiserver/router/local"
+	"k8s.io/kubernetes/pkg/hypernetes/apiserver/router/network"
+	"k8s.io/kubernetes/pkg/hypernetes/apiserver/router/volume"
 
 	"github.com/emicklei/go-restful"
 )
@@ -329,6 +331,62 @@ func (a *APIInstaller) registerContainerHandlers(ws *restful.WebService) error {
 // POST /networks/{id}/disconnect
 // DELETE /networks/{id}
 func (a *APIInstaller) registerNetworkHandlers(ws *restful.WebService) error {
+	nameParam := ws.PathParameter("id", "ID of the network").DataType("string")
+	params := []*restful.Parameter{nameParam}
+	actions := []action{}
+
+	actions = append(actions, action{"GET", "/networks", nil})
+	actions = append(actions, action{"GET", "/networks/{id}", params})
+
+	actions = append(actions, action{"POST", "/networks/create", nil})
+	actions = append(actions, action{"POST", "/networks/{id}/connect", params})
+	actions = append(actions, action{"POST", "/networks/{id}/disconnect", params})
+
+	actions = append(actions, action{"DELETE", "/networks/{id}", params})
+
+	for _, action := range actions {
+		m := monitorFilter(action.Verb, "networks")
+		fields := strings.Split(action.Path, "/")
+		subAction := fields[len(fields)-1]
+		switch action.Verb {
+		case "GET":
+			doc := "read the specified network"
+			route := ws.GET(action.Path).To(network.HandleNetworkAction(action.Verb, subAction)).
+				Filter(m).
+				Doc(doc).
+				Operation("getnetwork"+subAction).
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		case "POST":
+			doc := "update the specified network"
+			route := ws.POST(action.Path).To(network.HandleNetworkAction(action.Verb, subAction)).
+				Filter(m).
+				Doc(doc).
+				Operation("postnetwork"+subAction).
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		case "DELETE":
+			doc := "delete the specified network"
+			route := ws.DELETE(action.Path).To(network.HandleNetworkAction(action.Verb, subAction)).
+				Filter(m).
+				Doc(doc).
+				Operation("deletenetwork").
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		default:
+			return fmt.Errorf("unsupported action")
+		}
+	}
+	return nil
 	return nil
 }
 
@@ -337,6 +395,59 @@ func (a *APIInstaller) registerNetworkHandlers(ws *restful.WebService) error {
 // POST /volumes/create
 // DELETE /volumes{name}
 func (a *APIInstaller) registerVolumeHandlers(ws *restful.WebService) error {
+	nameParam := ws.PathParameter("name", "name of the volume").DataType("string")
+	params := []*restful.Parameter{nameParam}
+	actions := []action{}
+
+	actions = append(actions, action{"GET", "/volumes", nil})
+	actions = append(actions, action{"GET", "/volumes/{name}", params})
+
+	actions = append(actions, action{"POST", "/volumes/create", nil})
+
+	actions = append(actions, action{"DELETE", "/volumes/{name}", params})
+
+	for _, action := range actions {
+		m := monitorFilter(action.Verb, "volumes")
+		fields := strings.Split(action.Path, "/")
+		subAction := fields[len(fields)-1]
+		switch action.Verb {
+		case "GET":
+			doc := "read the specified volume"
+			route := ws.GET(action.Path).To(volume.HandleVolumeAction(action.Verb, subAction)).
+				Filter(m).
+				Doc(doc).
+				Operation("getvolume"+subAction).
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		case "POST":
+			doc := "update the specified volume"
+			route := ws.POST(action.Path).To(volume.HandleVolumeAction(action.Verb, subAction)).
+				Filter(m).
+				Doc(doc).
+				Operation("postvolume"+subAction).
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		case "DELETE":
+			doc := "delete the specified volume"
+			route := ws.DELETE(action.Path).To(volume.HandleVolumeAction(action.Verb, subAction)).
+				Filter(m).
+				Doc(doc).
+				Operation("deletevolume").
+				Consumes(restful.MIME_XML, restful.MIME_JSON).
+				Produces(restful.MIME_XML, restful.MIME_JSON)
+			addParams(route, action.Params)
+			ws.Route(route)
+			break
+		default:
+			return fmt.Errorf("unsupported action")
+		}
+	}
 	return nil
 }
 

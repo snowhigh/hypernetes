@@ -3,54 +3,98 @@ package network
 import (
 	"net/http"
 
-	"github.com/docker/docker/api/server/httputils"
-	"github.com/docker/docker/api/server/router"
-	"github.com/docker/docker/api/server/router/local"
-	"github.com/docker/docker/errors"
-	"golang.org/x/net/context"
+	"k8s.io/kubernetes/pkg/hypernetes/httputils"
+
+	"github.com/docker/engine-api/types"
+	"github.com/emicklei/go-restful"
 )
 
-// networkRouter is a router to talk with the network controller
-type networkRouter struct {
-	backend Backend
-	routes  []router.Route
-}
-
-// NewRouter initializes a new network router
-func NewRouter(b Backend) router.Router {
-	r := &networkRouter{
-		backend: b,
+func HandleNetworkAction(verb, action string) restful.RouteFunction {
+	switch verb {
+	case "GET":
+		return getNetwork
+	case "POST":
+		switch action {
+		case "create":
+			return postNetworkCreate
+		case "connect":
+			return postNetworkConnect
+		case "disconnect":
+			return postNetworkDisconnect
+		}
+	case "DELETE":
+		return deleteNetwork
 	}
-	r.initRoutes()
-	return r
+	return unsupportedAction
 }
 
-// Routes returns the available routes to the network controller
-func (r *networkRouter) Routes() []router.Route {
-	return r.routes
+/*
+	Query Parameters:
+		filters - JSON encoded value of the filters (a map[string][]string) to process on the networks list. Available filters: name=[network-names] , id=[network-ids]
+
+	Status Codes:
+		200 - no error
+		500 - server error
+*/
+func getNetworksList(req *restful.Request, resp *restful.Response) {
+	list := []types.NetworkResource{}
+	httputils.WriteRawJSON(http.StatusOK, list, resp.ResponseWriter)
 }
 
-func (r *networkRouter) initRoutes() {
-	r.routes = []router.Route{
-		// GET
-		local.NewGetRoute("/networks", r.controllerEnabledMiddleware(r.getNetworksList)),
-		local.NewGetRoute("/networks/{id:.*}", r.controllerEnabledMiddleware(r.getNetwork)),
-		// POST
-		local.NewPostRoute("/networks/create", r.controllerEnabledMiddleware(r.postNetworkCreate)),
-		local.NewPostRoute("/networks/{id:.*}/connect", r.controllerEnabledMiddleware(r.postNetworkConnect)),
-		local.NewPostRoute("/networks/{id:.*}/disconnect", r.controllerEnabledMiddleware(r.postNetworkDisconnect)),
-		// DELETE
-		local.NewDeleteRoute("/networks/{id:.*}", r.controllerEnabledMiddleware(r.deleteNetwork)),
+/*
+	Status Codes:
+		200 - no error
+		404 - network not found
+*/
+func getNetwork(req *restful.Request, resp *restful.Response) {
+	networkID := req.PathParameter("id")
+	if networkID == "" {
+		getNetworksList(req, resp)
+		return
 	}
+	result := types.NetworkResource{}
+	httputils.WriteRawJSON(http.StatusOK, result, resp.ResponseWriter)
 }
 
-func (r *networkRouter) controllerEnabledMiddleware(handler httputils.APIFunc) httputils.APIFunc {
-	if r.backend.NetworkControllerEnabled() {
-		return handler
-	}
-	return networkControllerDisabled
+/*
+	Status Codes:
+		201 - no error
+		404 - driver not found
+		500 - server error
+*/
+func postNetworkCreate(req *restful.Request, resp *restful.Response) {
+	networkCreateResp := types.NetworkCreateResponse{}
+	httputils.WriteRawJSON(http.StatusCreated, networkCreateResp, resp.ResponseWriter)
 }
 
-func networkControllerDisabled(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	return errors.ErrorNetworkControllerNotEnabled.WithArgs()
+/*
+	Status Codes:
+		200 - no error
+		404 - network or container is not found
+*/
+func postNetworkConnect(req *restful.Request, resp *restful.Response) {
+	httputils.WriteRawJSON(http.StatusOK, nil, resp.ResponseWriter)
+}
+
+/*
+	Status Codes:
+		200 - no error
+		404 - network or container is not found
+*/
+func postNetworkDisconnect(req *restful.Request, resp *restful.Response) {
+	httputils.WriteRawJSON(http.StatusOK, nil, resp.ResponseWriter)
+}
+
+/*
+	Status Codes
+		204 - no error
+		404 - no such network
+		500 - server error
+*/
+func deleteNetwork(req *restful.Request, resp *restful.Response) {
+	httputils.WriteRawJSON(http.StatusNoContent, nil, resp.ResponseWriter)
+}
+
+func unsupportedAction(req *restful.Request, resp *restful.Response) {
+	httputils.NotSupport(resp, req.Request)
 }

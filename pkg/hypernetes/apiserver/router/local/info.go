@@ -2,9 +2,9 @@ package local
 
 import (
 	"net/http"
+	"runtime"
 
 	"k8s.io/kubernetes/pkg/hypernetes/httputils"
-	"k8s.io/kubernetes/pkg/version"
 
 	"github.com/docker/engine-api/types"
 	"github.com/emicklei/go-restful"
@@ -37,7 +37,13 @@ func HandleMiscAction(verb, action string) restful.RouteFunction {
 }
 
 func getVersion(req *restful.Request, resp *restful.Response) {
-	httputils.WriteRawJSON(http.StatusOK, version.Get(), resp.ResponseWriter)
+	version := types.Version{
+		Version:    "1.91",
+		APIVersion: "1.21",
+		Os:         runtime.GOOS,
+		Arch:       runtime.GOARCH,
+	}
+	httputils.WriteRawJSON(http.StatusOK, version, resp.ResponseWriter)
 }
 
 func getInfo(req *restful.Request, resp *restful.Response) {

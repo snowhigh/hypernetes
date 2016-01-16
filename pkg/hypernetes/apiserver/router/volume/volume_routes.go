@@ -1,66 +1,76 @@
 package volume
 
 import (
-	"encoding/json"
 	"net/http"
 
-	"github.com/docker/docker/api/server/httputils"
-	"github.com/docker/docker/api/types"
-	"golang.org/x/net/context"
+	"k8s.io/kubernetes/pkg/hypernetes/httputils"
+
+	"github.com/docker/engine-api/types"
+	"github.com/emicklei/go-restful"
 )
 
-func (v *volumeRouter) getVolumesList(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	if err := httputils.ParseForm(r); err != nil {
-		return err
+func HandleVolumeAction(verb, action string) restful.RouteFunction {
+	switch verb {
+	case "GET":
+		return getVolume
+	case "POST":
+		return postVolumesCreate
+	case "DELETE":
+		return deleteVolumes
 	}
-
-	volumes, err := v.backend.Volumes(r.Form.Get("filters"))
-	if err != nil {
-		return err
-	}
-	return httputils.WriteJSON(w, http.StatusOK, &types.VolumesListResponse{Volumes: volumes})
+	return unsupportedAction
 }
 
-func (v *volumeRouter) getVolumeByName(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	if err := httputils.ParseForm(r); err != nil {
-		return err
-	}
+/*
+	Query Parameters:
+		filters - JSON encoded value of the filters (a map[string][]string) to process on the volumes list. There is one available filter: dangling=true
 
-	volume, err := v.backend.VolumeInspect(vars["name"])
-	if err != nil {
-		return err
-	}
-	return httputils.WriteJSON(w, http.StatusOK, volume)
+	Status Codes:
+		200 - no error
+		500 - server error
+*/
+func getVolumesList(req *restful.Request, resp *restful.Response) {
+	list := types.VolumesListResponse{}
+	httputils.WriteRawJSON(http.StatusOK, list, resp.ResponseWriter)
 }
 
-func (v *volumeRouter) postVolumesCreate(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	if err := httputils.ParseForm(r); err != nil {
-		return err
+/*
+	Status Codes:
+		200 - no error
+		404 - no such volume
+		500 - server error
+*/
+func getVolume(req *restful.Request, resp *restful.Response) {
+	name := req.PathParameter("name")
+	if name == "" {
+		getVolumesList(req, resp)
+		return
 	}
-
-	if err := httputils.CheckForJSON(r); err != nil {
-		return err
-	}
-
-	var req types.VolumeCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return err
-	}
-
-	volume, err := v.backend.VolumeCreate(req.Name, req.Driver, req.DriverOpts)
-	if err != nil {
-		return err
-	}
-	return httputils.WriteJSON(w, http.StatusCreated, volume)
+	volume := types.Volume{}
+	httputils.WriteRawJSON(http.StatusOK, volume, resp.ResponseWriter)
 }
 
-func (v *volumeRouter) deleteVolumes(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	if err := httputils.ParseForm(r); err != nil {
-		return err
-	}
-	if err := v.backend.VolumeRm(vars["name"]); err != nil {
-		return err
-	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+/*
+	Status Codes:
+		201 - no error
+		500 - server error
+*/
+func postVolumesCreate(req *restful.Request, resp *restful.Response) {
+	volume := types.Volume{}
+	httputils.WriteRawJSON(http.StatusCreated, volume, resp.ResponseWriter)
+}
+
+/*
+	Status Codes
+		204 - no error
+		404 - no such volume or volume driver
+		409 - volume is in use and cannot be removed
+		500 - server error
+*/
+func deleteVolumes(req *restful.Request, resp *restful.Response) {
+	httputils.WriteRawJSON(http.StatusNoContent, nil, resp.ResponseWriter)
+}
+
+func unsupportedAction(req *restful.Request, resp *restful.Response) {
+	httputils.NotSupport(resp, req.Request)
 }
